@@ -1,0 +1,81 @@
+{
+	"output_file": "settings.json",
+	"btnreadme": {
+		"type": "button",
+		"label": "open readme",
+		"tooltip": "read this!",
+		"wsevent": "",
+		"function": "openreadme",
+		"group": ""
+	},
+	"TwitchRewardName": {
+		"type": "textbox",
+		"value": "",
+		"label": "Title of Twitch Reward",
+		"tooltip": "Specify the name of the Twitch Reward that will trigger this event when detected.",
+		"group": ""
+	},
+	"BlacklistDuration": {
+		"type": "numberbox",
+		"label": "Blacklist Duration in Seconds",
+		"value": 3600,
+		"tooltip": "Specify the number in seconds for how long a word should be blacklisted. 1 Minute = 60, 1 Hour = 3600, 1 Day = 86400",
+		"group": ""
+	},
+	"EnableRedeemMessage": {
+		"type": "checkbox",
+		"value": false,
+		"label": "Enable Redemption Message",
+		"tooltip": "Enable or disable redemption message notifying chat of redemption effect.",
+		"group": "Redemption Message"
+	},
+	"RedeemMessage": {
+		"type": "textbox",
+		"value": "[username] has decreed that [word] shall not be used for [hours] hours!",
+		"label": "Redemption Message",
+		"tooltip": "Redemption message that will be posted notifying chat of redemption effect. options: [username] [word] [seconds] [minutes] [hours] [days]",
+		"group": "Redemption Message"
+	},
+	"EnableExpirationMessage": {
+		"type": "checkbox",
+		"value": false,
+		"label": "Enable Expiration Message",
+		"tooltip": "Enable or disable expiration message notifying chat of duration of reward effect ending.",
+		"group": "Expiration Message"
+	},
+	"ExpirationMessage": {
+		"type": "textbox",
+		"value": "[word] is now unlocked!",
+		"label": "Expiration Message",
+		"tooltip": "Expiration message that will be posted notifying chat of duration of reward effect ending. options: [word]",
+		"group": "Expiration Message"
+	},
+	"EnableTriggerMessage": {
+		"type": "checkbox",
+		"value": false,
+		"label": "Enable Trigger Message",
+		"tooltip": "Enable or disable trigger message posted to chat after someone triggers the blacklist.",
+		"group": "Trigger Message"
+	},
+	"TriggerMessage": {
+		"type": "textbox",
+		"value": "[username] Said: [msg]",
+		"label": "Trigger Message",
+		"tooltip": "Trigger message that will be posted to chat after someone triggers the blacklist. options: [username] [msg]",
+		"group": "Trigger Message"
+	},
+	"CensorPhrase": {
+		"type": "textbox",
+		"value": "[REDACTED]",
+		"label": "Censor Phrase",
+		"tooltip": "Message to replace blacklisted words in someone's message.",
+		"group": "Trigger Message"
+	},
+	"EnableDebug": {
+		"type": "checkbox",
+		"value": false,
+		"label": "Enable Debug",
+		"tooltip": "Enable or disable debug logs",
+		"group": "Debug Settings"
+	}
+}
