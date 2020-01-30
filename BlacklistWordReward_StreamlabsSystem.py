@@ -244,7 +244,9 @@ def Tick():
 #---------------------------
 def Parse(parseString, userid, username, targetid, targetname, message):
     return parseString
-
+#---------------------------
+#   [Optional] Reload Settings (Called when a user clicks the Save Settings button in the Chatbot UI)
+#---------------------------
 #---------------------------
 #   [Optional] Unload (Called when a user reloads their scripts or closes the bot / cleanup stuff)
 #---------------------------
