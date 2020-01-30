@@ -8,11 +8,18 @@
 		"function": "openreadme",
 		"group": ""
 	},
-	"TwitchRewardName": {
+	"BlacklistCommand": {
 		"type": "textbox",
-		"value": "",
-		"label": "Title of Twitch Reward",
-		"tooltip": "Specify the name of the Twitch Reward that will trigger this event when detected.",
+		"value": "!blacklist",
+		"label": "Name of command",
+		"tooltip": "Specify the name of the name of the command.",
+		"group": ""
+	},
+	"BlacklistCost": {
+		"type": "numberbox",
+		"label": "Cost to use command",
+		"value": 500,
+		"tooltip": "Specify how many points it takes to use the command.",
 		"group": ""
 	},
 	"BlacklistDuration": {
