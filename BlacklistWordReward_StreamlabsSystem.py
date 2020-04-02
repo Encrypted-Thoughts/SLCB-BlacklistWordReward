@@ -123,10 +123,7 @@ def Start():
 def EventReceiverConnected(sender, e):
 
     #get channel id for username
-    headers = { 
-        'Client-ID': 'icyqwwpy744ugu5x4ymyt6jqrnpxso', 
-        "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:]
-    }
+    headers = { "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:] }
     result = json.loads(Parent.GetRequest("https://api.twitch.tv/helix/users?login=" + Parent.GetChannelName(), headers))
     user = json.loads(result["response"])
     id = user["data"][0]["id"]
