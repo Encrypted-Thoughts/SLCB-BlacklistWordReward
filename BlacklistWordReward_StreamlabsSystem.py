@@ -40,6 +40,7 @@ class Settings(object):
         else:
             self.EnableDebug = False
             self.TwitchRewardName = ""
+            self.TwitchOAuthToken = ""
             self.BlacklistDuration = 3600
             self.EnableRedeemMessage = False
             self.RedeemMessage = "[username] has decreed that [word] shall not be used for [hours] hours!"
@@ -122,7 +123,10 @@ def Start():
 def EventReceiverConnected(sender, e):
 
     #get channel id for username
-    headers = { 'Client-ID': 'icyqwwpy744ugu5x4ymyt6jqrnpxso' }
+    headers = { 
+        'Client-ID': 'icyqwwpy744ugu5x4ymyt6jqrnpxso', 
+        "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:]
+    }
     result = json.loads(Parent.GetRequest("https://api.twitch.tv/helix/users?login=" + Parent.GetChannelName(), headers))
     user = json.loads(result["response"])
     id = user["data"][0]["id"]
@@ -131,7 +135,7 @@ def EventReceiverConnected(sender, e):
         Parent.Log(ScriptName, "Event receiver connected, sending topics for channel id: " + id);
 
     EventReceiver.ListenToRewards(id)
-    EventReceiver.SendTopics()
+    EventReceiver.SendTopics(ScriptSettings.TwitchOAuthToken)
     return
 
 def EventReceiverRewardRedeemed(sender, e):
@@ -273,5 +277,8 @@ def ScriptToggled(state):
             Parent.Log(ScriptName, "Event receiver already disconnected")
     return
 
-def openreadme():
+def OpenReadme():
     os.startfile(ReadMe)
+
+def GetToken():
+	os.startfile("https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=icyqwwpy744ugu5x4ymyt6jqrnpxso&redirect_uri=https://twitchapps.com/tmi/&scope=channel:read:redemptions&force_verify=true")
