@@ -65,20 +65,14 @@ class Settings(object):
 
 def ReloadSettings(jsonData):
     # Execute json reloading here
-
     if ScriptSettings.EnableDebug:
         Parent.Log(ScriptName, "Saving settings.")
 
     ScriptSettings.ReloadSettings(jsonData)
 
-    global EventReceiver
     try:
-        if EventReceiver:
-            EventReceiver.Disconnect()
-
-        EventReceiver = None
-
-        threading.Thread(target=Start,args=()).start()
+        Stop()
+        Start()
         if ScriptSettings.EnableDebug:
             Parent.Log(ScriptName, "Settings saved successfully")
     except Exception as e:
@@ -104,9 +98,6 @@ def Init():
             time = datetime.datetime.strptime(data[1], "%Y-%m-%d %H:%M:%S.%f")
             Blacklist.append((word, time))
 
-    ## Init the Streamlabs Event Receiver
-    threading.Thread(target=Start,args=()).start()
-
     return
 
 def Start():
@@ -120,16 +111,38 @@ def Start():
 
     EventReceiver.Connect()
 
+def Stop():
+    global EventReceiver
+    try:
+        if EventReceiver:
+            EventReceiver.Disconnect()
+            if ScriptSettings.EnableDebug:
+                Parent.Log(ScriptName, "Event receiver disconnected")
+        EventReceiver = None
+
+    except:
+        if ScriptSettings.EnableDebug:
+            Parent.Log(ScriptName, "Event receiver already disconnected")
+
 def EventReceiverConnected(sender, e):
 
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "Event receiver connecting")
+
     #get channel id for username
-    headers = { "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:] }
+    headers = { 
+        "Client-ID": "icyqwwpy744ugu5x4ymyt6jqrnpxso",
+        "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:] 
+    }
     result = json.loads(Parent.GetRequest("https://api.twitch.tv/helix/users?login=" + Parent.GetChannelName(), headers))
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "headers: " + str(headers))
+        Parent.Log(ScriptName, "result: " + str(result))
     user = json.loads(result["response"])
     id = user["data"][0]["id"]
 
     if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Event receiver connected, sending topics for channel id: " + id);
+        Parent.Log(ScriptName, "Event receiver connected, sending topics for channel id: " + id)
 
     EventReceiver.ListenToRewards(id)
     EventReceiver.SendTopics(ScriptSettings.TwitchOAuthToken)
@@ -228,6 +241,11 @@ def Execute(data):
 #---------------------------
 def Tick():
 
+    ## Init the Channel Points Event Receiver
+    global EventReceiver
+    if EventReceiver is None:
+        Start()
+
     global CurrentThread
     if CurrentThread and CurrentThread.isAlive() == False:
         CurrentThread = None
@@ -251,27 +269,21 @@ def Parse(parseString, userid, username, targetid, targetname, message):
 #---------------------------
 def Unload():
     # Disconnect EventReceiver cleanly
-    try:
-        SaveBlacklist()
-        if EventReceiver:
-            EventReceiver.Disconnect()
-    except:
-        if ScriptSettings.EnableDebug:
-            Parent.Log(ScriptName, "Event receiver already disconnected")
-
+    SaveBlacklist()
+    Stop()
     return
 
 #---------------------------
 #   [Optional] ScriptToggled (Notifies you when a user disables your script or enables it)
 #---------------------------
 def ScriptToggled(state):
-    try:
+    if state:
+        if EventReceiver is None:
+            Start()
+    else:
         SaveBlacklist()
-        if EventReceiver:
-            EventReceiver.Disconnect()
-    except:
-        if ScriptSettings.EnableDebug:
-            Parent.Log(ScriptName, "Event receiver already disconnected")
+        Stop()
+
     return
 
 def OpenReadme():
