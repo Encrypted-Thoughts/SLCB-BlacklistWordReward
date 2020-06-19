@@ -16,18 +16,26 @@ ScriptName = "Blacklist Word Reward"
 Website = "https://www.twitch.tv/EncryptedThoughts"
 Description = "Script to allow users to blacklist a word as a channel point reward."
 Creator = "EncryptedThoughts"
-Version = "1.0.0.0"
+Version = "2.0.0.0"
 
 #---------------------------
 #   Define Global Variables
 #---------------------------
 SettingsFile = os.path.join(os.path.dirname(__file__), "settings.json")
 BlacklistFile = os.path.join(os.path.dirname(__file__), "blacklist.json")
+RefreshTokenFile = os.path.join(os.path.dirname(__file__), "tokens.json")
 ReadMe = os.path.join(os.path.dirname(__file__), "README.txt")
 EventReceiver = None
 ThreadQueue = []
 CurrentThread = None
 Blacklist = []
+TokenExpiration = None
+LastTokenCheck = None # Used to make sure the bot doesn't spam trying to reconnect if there's a problem
+RefreshToken = None
+AccessToken = None
+UserID = None
+
+InvalidRefreshToken = False
 
 #---------------------------------------
 # Classes
@@ -64,15 +72,20 @@ class Settings(object):
 
 
 def ReloadSettings(jsonData):
-    # Execute json reloading here
     if ScriptSettings.EnableDebug:
         Parent.Log(ScriptName, "Saving settings.")
 
-    ScriptSettings.ReloadSettings(jsonData)
-
     try:
-        Stop()
-        Start()
+        ScriptSettings.__dict__ = json.loads(jsonData)
+        ScriptSettings.Save(SettingsFile)
+
+        RefreshTokens()
+        if InvalidRefreshToken is False:
+            if UserID is None:
+                GetUserID()
+            StopEventReceiver()
+            StartEventReceiver()
+
         if ScriptSettings.EnableDebug:
             Parent.Log(ScriptName, "Settings saved successfully")
     except Exception as e:
@@ -98,83 +111,19 @@ def Init():
             time = datetime.datetime.strptime(data[1], "%Y-%m-%d %H:%M:%S.%f")
             Blacklist.append((word, time))
 
+    global RefreshToken
+    global AccessToken
+    global TokenExpiration
+    if os.path.isfile(RefreshTokenFile):
+        with open(RefreshTokenFile) as f:
+            content = f.readlines()
+        if len(content) > 0:
+            data = json.loads(content[0])
+            RefreshToken = data["refresh_token"]
+            AccessToken = data["access_token"]
+            TokenExpiration = datetime.datetime.strptime(data["expiration"], "%Y-%m-%d %H:%M:%S.%f")
+
     return
-
-def Start():
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Starting receiver");
-
-    global EventReceiver
-    EventReceiver = TwitchPubSub()
-    EventReceiver.OnPubSubServiceConnected += EventReceiverConnected
-    EventReceiver.OnRewardRedeemed += EventReceiverRewardRedeemed    
-
-    EventReceiver.Connect()
-
-def Stop():
-    global EventReceiver
-    try:
-        if EventReceiver:
-            EventReceiver.Disconnect()
-            if ScriptSettings.EnableDebug:
-                Parent.Log(ScriptName, "Event receiver disconnected")
-        EventReceiver = None
-
-    except:
-        if ScriptSettings.EnableDebug:
-            Parent.Log(ScriptName, "Event receiver already disconnected")
-
-def EventReceiverConnected(sender, e):
-
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Event receiver connecting")
-
-    #get channel id for username
-    headers = { 
-        "Client-ID": "icyqwwpy744ugu5x4ymyt6jqrnpxso",
-        "Authorization": "Bearer " + ScriptSettings.TwitchOAuthToken[6:] 
-    }
-    result = json.loads(Parent.GetRequest("https://api.twitch.tv/helix/users?login=" + Parent.GetChannelName(), headers))
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "headers: " + str(headers))
-        Parent.Log(ScriptName, "result: " + str(result))
-    user = json.loads(result["response"])
-    id = user["data"][0]["id"]
-
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Event receiver connected, sending topics for channel id: " + id)
-
-    EventReceiver.ListenToRewards(id)
-    EventReceiver.SendTopics(ScriptSettings.TwitchOAuthToken)
-    return
-
-def EventReceiverRewardRedeemed(sender, e):
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Event triggered: " + e.Message)
-    if e.RewardTitle == ScriptSettings.TwitchRewardName:
-        ThreadQueue.append(threading.Thread(target=RewardRedeemedWorker,args=(e.DisplayName, e.Message, ScriptSettings.BlacklistDuration)))
-    return
-
-def RewardRedeemedWorker(username, word, duration):
-    global Blacklist
-    item = (word.strip(), datetime.datetime.now() + datetime.timedelta(0, duration))
-    if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, str(item))
-    Blacklist.append(item)
-    SaveBlacklist()
-    if ScriptSettings.EnableRedeemMessage:
-        message = ScriptSettings.RedeemMessage.replace("[username]", username)
-        message = message.replace("[word]", word)
-        message = message.replace("[seconds]", str(duration))
-        message = message.replace("[minutes]", str(math.trunc(duration/60)))
-        message = message.replace("[hours]", str(math.trunc(duration/3600)))
-        message = message.replace("[days]", str(math.trunc(duration/86400)))
-        Parent.SendStreamMessage(message)
-
-def SaveBlacklist():
-    with open(BlacklistFile, 'w') as f:
-        for item in Blacklist:
-            f.write(str(item[0]) + "," + str(item[1]) + "\n")
 
 #---------------------------
 #   [Required] Execute Data / Process messages
@@ -240,11 +189,14 @@ def Execute(data):
 #   [Required] Tick method (Gets called during every iteration even when there is no incoming data)
 #---------------------------
 def Tick():
-
-    ## Init the Channel Points Event Receiver
-    global EventReceiver
-    if EventReceiver is None:
-        Start()
+    if (EventReceiver is None or TokenExpiration < datetime.datetime.now()) and LastTokenCheck + datetime.timedelta(seconds=60) < datetime.datetime.now(): 
+        RefreshTokens();
+        if InvalidRefreshToken is False:
+            if UserID is None:
+                GetUserID()
+            StopEventReceiver()
+            StartEventReceiver()
+        return
 
     global CurrentThread
     if CurrentThread and CurrentThread.isAlive() == False:
@@ -268,9 +220,8 @@ def Parse(parseString, userid, username, targetid, targetname, message):
 #   [Optional] Unload (Called when a user reloads their scripts or closes the bot / cleanup stuff)
 #---------------------------
 def Unload():
-    # Disconnect EventReceiver cleanly
     SaveBlacklist()
-    Stop()
+    StopEventReceiver()
     return
 
 #---------------------------
@@ -279,15 +230,195 @@ def Unload():
 def ScriptToggled(state):
     if state:
         if EventReceiver is None:
-            Start()
+            RefreshTokens()
+            if InvalidRefreshToken is False:
+                if UserID is None:
+                    GetUserID()
+                StartEventReceiver()
     else:
         SaveBlacklist()
-        Stop()
+        StopEventReceiver()
 
     return
 
+#---------------------------
+#   StartEventReceiver (Start twitch pubsub event receiver)
+#---------------------------
+def StartEventReceiver():
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "Starting receiver")
+
+    global EventReceiver
+    EventReceiver = TwitchPubSub()
+    EventReceiver.OnPubSubServiceConnected += EventReceiverConnected
+    EventReceiver.OnRewardRedeemed += EventReceiverRewardRedeemed
+
+    EventReceiver.Connect()
+
+#---------------------------
+#   StopEventReceiver (Stop twitch pubsub event receiver)
+#---------------------------
+def StopEventReceiver():
+    global EventReceiver
+    try:
+        if EventReceiver:
+            EventReceiver.Disconnect()
+            if ScriptSettings.EnableDebug:
+                Parent.Log(ScriptName, "Event receiver disconnected")
+        EventReceiver = None
+
+    except:
+        if ScriptSettings.EnableDebug:
+            Parent.Log(ScriptName, "Event receiver already disconnected")
+
+#---------------------------
+#   EventReceiverConnected (Twitch pubsub event callback for on connected event. Needs a valid UserID and AccessToken to function properly.)
+#---------------------------
+def EventReceiverConnected(sender, e):
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "Event receiver connected, sending topics for channel id: " + str(UserID))
+
+    EventReceiver.ListenToRewards(UserID)
+    EventReceiver.SendTopics(AccessToken)
+    return
+
+#---------------------------
+#   EventReceiverRewardRedeemed (Twitch pubsub event callback for a detected redeemed channel point reward.)
+#---------------------------
+def EventReceiverRewardRedeemed(sender, e):
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "Event triggered: " + e.Message)
+    if e.RewardTitle == ScriptSettings.TwitchRewardName:
+        ThreadQueue.append(threading.Thread(target=RewardRedeemedWorker,args=(e.DisplayName, e.Message, ScriptSettings.BlacklistDuration)))
+    return
+
+#---------------------------
+#   RewardRedeemedWorker (Worker function to be spun off into its own thread to complete without blocking the rest of script execution.)
+#---------------------------
+def RewardRedeemedWorker(username, word, duration):
+    global Blacklist
+    item = (word.strip(), datetime.datetime.now() + datetime.timedelta(0, duration))
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, str(item))
+    Blacklist.append(item)
+    SaveBlacklist()
+    if ScriptSettings.EnableRedeemMessage:
+        message = ScriptSettings.RedeemMessage.replace("[username]", username)
+        message = message.replace("[word]", word)
+        message = message.replace("[seconds]", str(duration))
+        message = message.replace("[minutes]", str(math.trunc(duration/60)))
+        message = message.replace("[hours]", str(math.trunc(duration/3600)))
+        message = message.replace("[days]", str(math.trunc(duration/86400)))
+        Parent.SendStreamMessage(message)
+
+#---------------------------
+#   RefreshTokens (Called when a new access token needs to be retrieved.)
+#---------------------------
+def RefreshTokens():
+    global RefreshToken
+    global AccessToken
+    global TokenExpiration
+    global LastTokenCheck
+
+    result = None
+
+    try:
+        if RefreshToken:
+            content = {
+	            "grant_type": "refresh_token",
+	            "refresh_token": str(RefreshToken)
+            }
+
+            result = json.loads(json.loads(Parent.PostRequest("https://api.et-twitch-auth.com/",{}, content, True))["response"])
+            if ScriptSettings.EnableDebug:
+                Parent.Log(ScriptName, str(content))
+        else:
+            if ScriptSettings.TwitchAuthCode == "":
+                LastTokenCheck = datetime.datetime.now()
+                TokenExpiration = datetime.datetime.now()
+                Parent.Log(ScriptName, "Access code cannot be retrieved please enter a valid authorization code.")
+                InvalidRefreshToken = True
+                return
+
+            content = {
+                'grant_type': 'authorization_code',
+                'code': ScriptSettings.TwitchAuthCode
+            }
+
+            result = json.loads(json.loads(Parent.PostRequest("https://api.et-twitch-auth.com/",{}, content, True))["response"])
+            if ScriptSettings.EnableDebug:
+                Parent.Log(ScriptName, str(content))
+
+        if ScriptSettings.EnableDebug:
+            Parent.Log(ScriptName, str(result))
+
+        RefreshToken = result["refresh_token"]
+        AccessToken = result["access_token"]
+        TokenExpiration = datetime.datetime.now() + datetime.timedelta(seconds=int(result["expires_in"]) - 300)
+
+        LastTokenCheck = datetime.datetime.now()
+        SaveTokens()
+    except Exception as e:
+        LastTokenCheck = datetime.datetime.now()
+        TokenExpiration = datetime.datetime.now()
+        if ScriptSettings.EnableDebug:
+            Parent.Log(ScriptName, "Exception: " + str(e.message))
+        InvalidRefreshToken = True
+
+#---------------------------
+#   GetUserID (Calls twitch's api with current channel user name to get the user id and sets global UserID variable.)
+#---------------------------
+def GetUserID():
+    global UserID
+    headers = { 
+        "Client-ID": "icyqwwpy744ugu5x4ymyt6jqrnpxso",
+        "Authorization": "Bearer " + AccessToken
+    }
+    result = json.loads(Parent.GetRequest("https://api.twitch.tv/helix/users?login=" + Parent.GetChannelName(), headers))
+    if ScriptSettings.EnableDebug:
+        Parent.Log(ScriptName, "headers: " + str(headers))
+        Parent.Log(ScriptName, "result: " + str(result))
+    user = json.loads(result["response"])
+    UserID = user["data"][0]["id"]
+
+#---------------------------
+#   SaveBlacklist (Saves list of blacklisted words to file for use on script restart and reload)
+#---------------------------
+def SaveBlacklist():
+    with open(BlacklistFile, 'w') as f:
+        for item in Blacklist:
+            f.write(str(item[0]) + "," + str(item[1]) + "\n")
+
+#---------------------------
+#   SaveTokens (Saves tokens and expiration time to a json file in script bin for use on script restart and reload.)
+#---------------------------
+def SaveTokens():
+    data = {
+        "refresh_token": RefreshToken,
+        "access_token": AccessToken,
+        "expiration": str(TokenExpiration)
+    }
+
+    with open(RefreshTokenFile, 'w') as f:
+        f.write(json.dumps(data))
+
+#---------------------------
+#   OpenReadme (Attached to settings button to open the readme file in the script bin.)
+#---------------------------
 def OpenReadme():
     os.startfile(ReadMe)
 
+#---------------------------
+#   GetToken (Attached to settings button to open a page in browser to get an authorization code.)
+#---------------------------
 def GetToken():
-	os.startfile("https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=icyqwwpy744ugu5x4ymyt6jqrnpxso&redirect_uri=https://twitchapps.com/tmi/&scope=channel:read:redemptions&force_verify=true")
+	os.startfile("https://id.twitch.tv/oauth2/authorize?response_type=code&client_id=icyqwwpy744ugu5x4ymyt6jqrnpxso&redirect_uri=https://et-twitch-auth.com/&scope=channel:read:redemptions&force_verify=true")
+
+#---------------------------
+#   DeleteSavedTokens (Attached to settings button to allow user to easily delete the tokens.json file and clear out RefreshToken currently in memory so that a new authorization code can be entered and used.)
+#---------------------------
+def DeleteSavedTokens():
+    global RefreshToken
+    if os.path.exists(RefreshTokenFile):
+        os.remove(RefreshTokenFile)
+    RefreshToken = None
