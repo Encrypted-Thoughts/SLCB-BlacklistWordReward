@@ -286,7 +286,11 @@ def EventReceiverConnected(sender, e):
 #---------------------------
 def EventReceiverRewardRedeemed(sender, e):
     if ScriptSettings.EnableDebug:
-        Parent.Log(ScriptName, "Event triggered: " + e.Message)
+        Parent.Log(ScriptName, "Event triggered: " + str(e.TimeStamp) + " ChannelId: " + str(e.ChannelId) + " Login: " + str(e.Login) + " DisplayName: " + str(e.DisplayName) + " Message: " + str(e.Message) + " RewardId: " + str(e.RewardId) + " RewardTitle: " + str(e.RewardTitle) + " RewardPrompt: " + str(e.RewardPrompt) + " RewardCost: " + str(e.RewardCost) + " Status: " + str(e.Status))
+    
+    if "FULFILLED" not in e.Status:
+        return
+
     if e.RewardTitle == ScriptSettings.TwitchRewardName:
         ThreadQueue.append(threading.Thread(target=RewardRedeemedWorker,args=(e.DisplayName, e.Message, ScriptSettings.BlacklistDuration)))
     return
