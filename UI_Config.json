@@ -46,6 +46,17 @@
 		"tooltip": "Specify the name of the Twitch Reward that will trigger this event when detected.",
 		"group": ""
 	},
+	"TwitchRewardActivationType": {
+		"type": "dropdown",
+		"label": "Activation Point",
+		"value": "Immediate",
+		"tooltip": "Set whether the reward should be triggered immediately on reward redemption by viewer, or when the reward is accepted/rejected from the reward queue. Note: twitch currently doesn't return a way to distinguish between Accept or Reject so Reject will still trigger the reward.",
+		"items": [
+			"Immediate",
+			"On Reward Queue Accept/Reject"
+		],
+		"group": ""
+	},
 	"BlacklistDuration": {
 		"type": "numberbox",
 		"label": "Blacklist Duration in Seconds",
